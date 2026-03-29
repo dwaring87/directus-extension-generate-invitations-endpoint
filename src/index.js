@@ -10,23 +10,19 @@ const OUTPUT_DIR = `./${EXTENSION_DIR}/output`;
 const BIN_DIR = `./${EXTENSION_DIR}/bin`;
 const GENERATE = `${BIN_DIR}/generate.sh`;
 const UPLOAD_DIR = './uploads';
-const INVITATIONS_COLLECTION = 'invitations';
-const DETAILS_COLLECTION = 'details';
 
-const generate = (id, { headerTemplate, footerTemplate, invitationsItemsService, details, outputDir }) => {
+const generate = ({ invitation, details, headerTemplate, footerTemplate, outputDir }) => {
     return new Promise(async (resolve, reject) => {
         try {
-            console.log("--> processing invite: " + id);
-
-            // Get Invitation Properties and Details
-            const invitation = await invitationsItemsService.readOne(id);
 
             // Set Generate Arguments
             const baseTemplate = `${EXTENSION_DIR}/share/${BASE_TEMPLATE}`;
             const domain = details?.website_url;
+            const id = invitation?.id;
             const inviteCode = invitation?.invite_code;
             const inviteName = invitation?.name;
 
+            // Build and run generate script
             const cmd = `${GENERATE} "${inviteCode}" "${inviteName}" "${domain}" "${outputDir}" "${headerTemplate}" "${footerTemplate}" "${baseTemplate}"`;
             exec(cmd, (err, stdout, stderr) => {
                 console.log(stdout);
@@ -59,13 +55,13 @@ const generate = (id, { headerTemplate, footerTemplate, invitationsItemsService,
 export default {
     id: 'generate-invitations',
     handler: async (router, { getSchema, services }) => {
-        const { FilesService, ItemsService } = services;
+        const { FilesService } = services;
         router.use(bodyParser.text({ type: 'text/plain' }));
         router.post('/', async (req, res) => {
             try {
-                console.log("*** GENERATE INVITATIONS ***");
-                const body = JSON.parse(req?.body || '{"ids": []}');
-                const ids = body?.ids || [];
+                const body = JSON.parse(req?.body || '{"invitations": [], "details": {}}');
+                const invitations = body?.invitations || [];
+                const details = body?.details || {};
 
                 // Check for user-provided templates
                 const filesService = new FilesService({
@@ -88,26 +84,15 @@ export default {
                 // Set output directory
                 const outputDir = `${OUTPUT_DIR}/${crypto.createHash('md5').update(Date.now().toString()).digest('hex')}`;
 
-                // Set Items Services
-                const invitationsItemsService = new ItemsService(INVITATIONS_COLLECTION, {
-                    schema: await getSchema(),
-                    accountability: req.accountability
-                });
-                const detailsItemsService = new ItemsService(DETAILS_COLLECTION, {
-                    schema: await getSchema(),
-                    accountability: req.accountability
-                });
-                const details = await detailsItemsService.readSingleton({});
-
                 // Process each invite
-                const codes = [];
-                for ( let i = 0; i < ids.length; i++ ) {
-                    const code = await generate(ids[i], { headerTemplate, footerTemplate, invitationsItemsService, details, outputDir });
-                    codes.push(code);
+                const rtn = [];
+                for ( let i = 0; i < invitations.length; i++ ) {
+                    const gen = await generate({invitation: invitations[i], details, headerTemplate, footerTemplate, outputDir });
+                    rtn.push(gen);
                 }
 
                 // Return the invite codes that have been processed
-                return res.send({codes});
+                return res.send(rtn);
             }
             catch (err) {
                 return res.status(500).send({ error: `Caught error [${err}]` });

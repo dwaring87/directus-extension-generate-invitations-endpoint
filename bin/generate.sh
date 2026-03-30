@@ -93,7 +93,7 @@ RSVP_INVITE_URL="$RSVP_URL?invite=$INVITE_CODE"
 
 # Create QR Code
 QRCODE_FILE="$QRCODES_DIR/$INVITE_CODE.png"
-qrencode -s 5 -m 2 -t png -o "$QRCODE_FILE" "$RSVP_INVITE_URL"
+qrencode -s 8 -m 2 -t png -o "$QRCODE_FILE" "$RSVP_INVITE_URL"
 
 # Set output
 output="$INVITES_DIR/$INVITE_CODE.png"
@@ -113,8 +113,9 @@ magick "$output" -fill black -font Inconsolata-Black -pointsize 48 \
 	-annotate +125+580 "$DOMAIN/rsvp" "$output"
 
 # Add Invite Code
-magick "$output" -undercolor '#eee' -fill black -font Inconsolata-Black -pointsize 64 \
-	-annotate +125+770 "\ $INVITE_CODE\ " "$output"
+magick "$output" \( -background '#eee' -fill black -font Inconsolata-Black -pointsize 54 \
+	-size 825x caption:" $INVITE_CODE " -trim -bordercolor '#eee' -border 10 +repage \) \
+	-geometry +110+710 -composite "$output"
 
 # Add footer template to base template
 magick \( -page 1323x1149+0+0 "$output" \) \
@@ -123,5 +124,5 @@ magick \( -page 1323x1149+0+0 "$output" \) \
 
 # Add QR Code
 magick \( -page 1323x1149+0+0 "$output" \) \
-	\( -page +1075+780 "$QRCODE_FILE" \) \
+	\( -page +965+650 "$QRCODE_FILE" \) \
 	-flatten "$output"

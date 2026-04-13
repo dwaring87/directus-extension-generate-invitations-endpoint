@@ -1,15 +1,29 @@
 import { exec } from 'child_process';
 import bodyParser from 'body-parser';
-import crypto from 'node:crypto';
+import fs from 'node:fs';
 
 const HEADER_TEMPLATE = 'invite_template_header.png';
 const FOOTER_TEMPLATE = 'invite_template_footer.png';
 const BASE_TEMPLATE = 'invite_template.png';
-const EXTENSION_DIR = './extensions/directus-extension-generate-invitations-endpoint';
-const OUTPUT_DIR = `./${EXTENSION_DIR}/output`;
-const BIN_DIR = `./${EXTENSION_DIR}/bin`;
-const GENERATE = `${BIN_DIR}/generate.sh`;
-const UPLOAD_DIR = './uploads';
+
+const ROOT_DIR = process.env?.PWD || '/directus'
+const UPLOAD_DIR = `${ROOT_DIR}/uploads`;
+const EXTENSION_DIR = `${ROOT_DIR}/extensions/directus-extension-generate-invitations-endpoint`;
+const OUTPUT_DIR = `${EXTENSION_DIR}/output`;
+const GENERATE = `${EXTENSION_DIR}/bin/generate.sh`;
+const COMBINE = `${EXTENSION_DIR}/bin/combine.sh`;
+
+const timestamp = () => {
+    const pad = (n, width = 2) => String(n).padStart(width, '0');
+    const d = new Date();
+    const YYYY = d.getFullYear();
+    const MM = pad(d.getMonth() + 1);
+    const DD = pad(d.getDate());
+    const HH = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    return `${YYYY}${MM}${DD}-${HH}${mm}${ss}`;
+}
 
 const generate = ({ invitation, details, headerTemplate, footerTemplate, outputDir }) => {
     return new Promise(async (resolve, reject) => {
@@ -37,6 +51,7 @@ const generate = ({ invitation, details, headerTemplate, footerTemplate, outputD
                     id,
                     code: inviteCode,
                     name: inviteName,
+                    doman: domain,
                     templates: {
                         base: baseTemplate,
                         header: headerTemplate,
@@ -52,10 +67,33 @@ const generate = ({ invitation, details, headerTemplate, footerTemplate, outputD
     });
 }
 
+const combine = ({ outputDir }) => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const input = `${outputDir}/invites/`;
+            const output = `${outputDir}/invitations.pdf`;
+            const cmd = `${COMBINE} "${input}" "${output}"`;
+            exec(cmd, (err, stdout, stderr) => {
+                console.log(stdout);
+                if ( stderr ) console.log(stderr);
+                if ( err || (stdout && stdout.startsWith('ERROR')) ) {
+                    const errmsg = stdout.startsWith('ERROR') ? stdout : err;
+                    const rejmsg = `Could not combine invites from ${input} [${errmsg}]`;
+                    return reject(rejmsg);
+                }
+                return resolve({ input, output });
+            });
+        }
+        catch (err) {
+            return reject(err);
+        }
+    });
+}
+
 export default {
     id: 'generate-invitations',
     handler: async (router, { getSchema, services }) => {
-        const { FilesService } = services;
+        const { FilesService, FoldersService } = services;
         router.use(bodyParser.text({ type: 'text/plain' }));
         router.post('/', async (req, res) => {
             try {
@@ -82,17 +120,50 @@ export default {
                 const footerTemplate = userFooters && userFooters.length > 0 ? `${UPLOAD_DIR}/${userFooters[0].filename_disk}` : `${EXTENSION_DIR}/share/${FOOTER_TEMPLATE}`;
 
                 // Set output directory
-                const outputDir = `${OUTPUT_DIR}/${crypto.createHash('md5').update(Date.now().toString()).digest('hex')}`;
+                const ts = timestamp();
+                const outputDir = `${OUTPUT_DIR}/${ts}`;
 
                 // Process each invite
-                const rtn = [];
+                const processed = [];
                 for ( let i = 0; i < invitations.length; i++ ) {
                     const gen = await generate({invitation: invitations[i], details, headerTemplate, footerTemplate, outputDir });
-                    rtn.push(gen);
+                    processed.push(gen);
                 }
 
-                // Return the invite codes that have been processed
-                return res.send(rtn);
+                // Combine the invites
+                const { output } = await combine({ outputDir });
+
+                // Create the invitations folder, if not found
+                const foldersService = new FoldersService({
+                    schema: await getSchema(),
+                    accountability: req.accountability
+                });
+                const invitationsFolderQuery = await foldersService.readByQuery({
+                    filter: { name: { _eq: 'invitations' } }
+                });
+
+                // Set the invitations folder id
+                let invitationsFolderId;
+                if ( invitationsFolderQuery.length === 0 ) {
+                    invitationsFolderId = await foldersService.createOne({ name: 'invitations' });
+                }
+                else {
+                    invitationsFolderId = invitationsFolderQuery[0].id;
+                }
+
+                // Save the file
+                const outputStream = fs.createReadStream(output);
+                const fileKey = await filesService.uploadOne(outputStream, {
+                    title: `invitations-${ts}`,
+                    description: `Generated invitations for: ${processed.map((e) => e.name).join(', ')}`,
+                    filename_download: `invitations-${ts}.pdf`,
+                    type: 'application/pdf',
+                    folder: invitationsFolderId,
+                    storage: 'local',
+                });
+                if ( !fileKey ) return res.status(500).send({ error: 'Could not save pdf to files' });
+
+                return res.send({ processed, output, fileKey, timestamp: ts });
             }
             catch (err) {
                 return res.status(500).send({ error: `Caught error [${err}]` });

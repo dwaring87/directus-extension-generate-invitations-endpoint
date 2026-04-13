@@ -1,5 +1,10 @@
 #! /usr/bin/env sh
 
+#
+# GENERATE INVITE
+# Generate a specifc invitation png
+#
+
 INVITE_CODE="$1"
 INVITE_NAME="$2"
 DOMAIN="$3"

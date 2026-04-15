@@ -20,6 +20,7 @@ EXTENSION_DIRS.forEach((dir) => {
         EXTENSION_DIR = dir;
     }
 });
+console.log("[extension-generate-invitations-endpoint] using extensions dir: " + EXTENSION_DIR);
 
 const OUTPUT_DIR = `${EXTENSION_DIR}/output`;
 const GENERATE = `${EXTENSION_DIR}/bin/generate.sh`;

@@ -8,7 +8,19 @@ const BASE_TEMPLATE = 'invite_template.png';
 
 const ROOT_DIR = process.env?.PWD || '/directus'
 const UPLOAD_DIR = `${ROOT_DIR}/uploads`;
-const EXTENSION_DIR = `${ROOT_DIR}/extensions/directus-extension-generate-invitations-endpoint`;
+
+// Set the extensions directory
+const EXTENSION_DIRS = [
+    `${ROOT_DIR}/extensions/directus-extension-generate-invitations-endpoint`,
+    `${ROOT_DIR}/node_modules/directus-extension-generate-invitations-endpoint`
+];
+let EXTENSION_DIR;
+EXTENSION_DIRS.forEach((dir) => {
+    if (fs.existsSync(dir)) {
+        EXTENSION_DIR = dir;
+    }
+});
+
 const OUTPUT_DIR = `${EXTENSION_DIR}/output`;
 const GENERATE = `${EXTENSION_DIR}/bin/generate.sh`;
 const COMBINE = `${EXTENSION_DIR}/bin/combine.sh`;
